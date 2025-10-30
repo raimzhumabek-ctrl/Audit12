@@ -132,6 +132,7 @@ const LS_KEYS = {
 const uid = (prefix) => `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
 const fmtDate = (ts) => new Date(ts).toLocaleString();
 
+// Storage helpers
 // --- Storage helpers -------------------------------------------------------------------------
 const safeParse = (value, fallback) => {
   if (!value) return fallback;
@@ -168,6 +169,7 @@ const saveCurrentUserId = (id) => {
   }
 };
 
+// Root component
 // --- Root component --------------------------------------------------------------------------
 export default function IdeaBoardApp() {
   const [ideas, setIdeas] = useState(() => loadIdeas());
@@ -198,6 +200,25 @@ export default function IdeaBoardApp() {
       setAuthIntent("register");
     }
   }, [users]);
+
+  if (!currentUser) {
+    return (
+      <AuthScreen
+        users={users}
+        initialMode={authIntent}
+        onModeChange={setAuthIntent}
+        onLogin={(id) => setCurrentUserId(id)}
+        onRegister={({ name, dept, role }) => {
+          const newUser = { id: uid("user"), name, role, ...(dept ? { dept } : {}) };
+          setUsers((prev) => [...prev, newUser]);
+          setCurrentUserId(newUser.id);
+        }}
+      />
+    );
+  }
+
+  const perms = PERMISSIONS[currentUser.role] ?? PERMISSIONS.employee;
+
 
   if (!currentUser) {
     return (
@@ -257,6 +278,18 @@ export default function IdeaBoardApp() {
     <div style={styles.page}>
       <Topbar
         currentUser={currentUser}
+        canSubmit={perms.submit}
+        onLogout={() => {
+          setAuthIntent(users.length > 0 ? "login" : "register");
+          setCurrentUserId(null);
+          setTab("ideas");
+          setShowForm(false);
+          setQuery("");
+          setCategory("all");
+          setStatus("all");
+          setSort("top");
+        }}
+        onShowForm={() => setShowForm(true)}
         canSubmit={perms.submit}
         onLogout={() => {
           setAuthIntent(users.length > 0 ? "login" : "register");
@@ -357,6 +390,7 @@ export default function IdeaBoardApp() {
   );
 }
 
+// Pure helpers
 // --- Pure helpers ---------------------------------------------------------------------------
 const applyVote = (idea, userId, dir) => {
   const hasVoted = idea.voterIds.includes(userId);
@@ -384,6 +418,7 @@ const addComment = (idea, user, text) => {
   return { ...idea, comments: [...idea.comments, comment] };
 };
 
+// UI pieces
 // --- UI pieces ------------------------------------------------------------------------------
 const Topbar = ({ currentUser, canSubmit, onLogout, onShowForm }) => (
   <header style={styles.topbar}>
@@ -847,6 +882,19 @@ const IdeaCard = ({ idea, me, perms, onVote, onComment, onStatusChange, onConver
           <div>{idea.votes}</div>
           <button style={styles.secondaryBtn} onClick={() => onVote(-1)}>▼</button>
         </div>
+        </div>
+        <Badge text={STATUS_LABEL[idea.status]} />
+      </div>
+
+      <p style={{ marginTop: 12, lineHeight: 1.4 }}>{idea.desc}</p>
+      <div style={{ fontSize: 13, opacity: 0.8 }}>Категория: {idea.category}</div>
+
+      <div style={styles.ideaFooter}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button style={styles.secondaryBtn} onClick={() => onVote(1)}>▲</button>
+          <div>{idea.votes}</div>
+          <button style={styles.secondaryBtn} onClick={() => onVote(-1)}>▼</button>
+        </div>
         <div style={{ display: "flex", gap: 8 }}>
           {perms.moderate && (
             <select
@@ -1036,6 +1084,7 @@ const Badge = ({ text }) => (
   <span style={styles.badge}>{text}</span>
 );
 
+// Styles
 // --- Styles ----------------------------------------------------------------------------------
 const styles = {
   page: {
