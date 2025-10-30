@@ -9,6 +9,94 @@ const DEFAULT_USERS = [
   { id: "u3", name: "Менеджер Айбек", role: "manager", dept: "Операциялар" },
   { id: "u4", name: "Админ Нұржан", role: "admin", dept: "HQ" },
 ];
+]);
+
+// Future roles to unlock later: hr, reviewer, pm, analyst
+const ROLES = ["employee", "manager", "admin"];
+
+const PERMS = {
+  employee: {
+    submit: true,
+    vote: true,
+    comment: true,
+    changeStatus: false,
+    convertToProject: false,
+  },
+  manager: {
+    submit: true,
+    vote: true,
+    comment: true,
+    changeStatus: true,
+    convertToProject: true,
+  },
+  admin: {
+    submit: true,
+    vote: true,
+    comment: true,
+    changeStatus: true,
+    convertToProject: true,
+  },
+};
+
+// ---------- Storage helpers ----------
+const LS_KEYS = { ideas: "ideaboard.ideas", currentUser: "ideaboard.currentUser", users: "ideaboard.users" };
+
+/** @returns {Idea[]} */
+function loadIdeas() {
+  const raw = localStorage.getItem(LS_KEYS.ideas);
+  if (!raw) return [];
+  try { return JSON.parse(raw); } catch { return []; }
+}
+
+/** @param {Idea[]} ideas */
+function saveIdeas(ideas) { localStorage.setItem(LS_KEYS.ideas, JSON.stringify(ideas)); }
+
+/** @returns {User[]} */
+function loadUsers() {
+  const raw = localStorage.getItem(LS_KEYS.users);
+  if (!raw) return DEFAULT_USERS;
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.every(u => u && typeof u.id === "string")) {
+      return parsed;
+    }
+  } catch {}
+  return DEFAULT_USERS;
+}
+
+/** @param {User[]} users */
+function saveUsers(users) { localStorage.setItem(LS_KEYS.users, JSON.stringify(users)); }
+
+/** @returns {string|null} */
+function loadCurrentUserId() {
+  const raw = localStorage.getItem(LS_KEYS.currentUser);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && "id" in parsed) {
+      return parsed.id;
+    }
+    if (typeof parsed === "string") {
+      return parsed;
+    }
+  } catch {}
+  try {
+    const fallback = JSON.parse(raw);
+    if (fallback && typeof fallback === "object" && "id" in fallback) {
+      return fallback.id;
+    }
+  } catch {}
+  return raw || null;
+}
+
+/** @param {string|null} id */
+function saveCurrentUserId(id) {
+  if (id) {
+    localStorage.setItem(LS_KEYS.currentUser, JSON.stringify(id));
+  } else {
+    localStorage.removeItem(LS_KEYS.currentUser);
+  }
+}
 
 const PERMISSIONS = {
   employee: { submit: true, vote: true, comment: true, moderate: false, convert: false },
@@ -86,6 +174,10 @@ export default function IdeaBoardApp() {
   const [users, setUsers] = useState(() => loadUsers());
   const [currentUserId, setCurrentUserId] = useState(() => loadCurrentUserId());
   const [authIntent, setAuthIntent] = useState(() => (users.length === 0 ? "register" : "login"));
+  const [ideas, setIdeas] = useState(() => /** @type {Idea[]} */(loadIdeas()));
+  const [users, setUsers] = useState(() => /** @type {User[]} */(loadUsers()));
+  const [currentUserId, setCurrentUserId] = useState(() => loadCurrentUserId());
+  const currentUser = useMemo(() => users.find(u => u.id === currentUserId) || null, [users, currentUserId]);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
   const [status, setStatus] = useState("all");
@@ -120,6 +212,20 @@ export default function IdeaBoardApp() {
           setCurrentUserId(newUser.id);
         }}
       />
+
+  if (!currentUser) {
+    return (
+      <div style={{ ...styles.page, display: "grid", placeItems: "center", padding: 24 }}>
+        <AuthGate
+          users={users}
+          onLogin={(id) => setCurrentUserId(id)}
+          onRegister={({ name, dept, role }) => {
+            const user = /** @type {User} */({ id: uid("user"), name, role, ...(dept ? { dept } : {}) });
+            setUsers(prev => [...prev, user]);
+            setCurrentUserId(user.id);
+          }}
+        />
+      </div>
     );
   }
 
@@ -163,6 +269,9 @@ export default function IdeaBoardApp() {
           setSort("top");
         }}
         onShowForm={() => setShowForm(true)}
+        onLogout={() => setCurrentUserId(null)}
+        onNewIdea={() => setShowForm(true)}
+        canSubmit={perms.submit}
       />
 
       <Tabs value={tab} onChange={setTab} />
@@ -288,6 +397,21 @@ const Topbar = ({ currentUser, canSubmit, onLogout, onShowForm }) => (
         <div style={{ fontSize: 12, opacity: 0.75 }}>
           {currentUser.role}{currentUser.dept ? ` • ${currentUser.dept}` : ""}
         </div>
+// ---------- UI pieces ----------
+function Topbar({ currentUser, onLogout, onNewIdea, canSubmit }) {
+  return (
+    <div style={styles.topbar}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <h1 style={styles.h1}>IdeaBoard</h1>
+        <Badge text="Қызметкерлерге арналған"/>
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={styles.userBox}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{currentUser.name}</div>
+          <div style={{ fontSize: 12, opacity: 0.75 }}>{currentUser.role}{currentUser.dept ? ` • ${currentUser.dept}` : ""}</div>
+        </div>
+        <button style={styles.secondaryBtn} onClick={onLogout}>Шығу</button>
+        <button style={{ ...styles.btn, opacity: canSubmit ? 1 : 0.5 }} onClick={() => canSubmit && onNewIdea()}>+ Ұсыныс енгізу</button>
       </div>
       <button style={styles.secondaryBtn} onClick={onLogout}>Шығу</button>
       <button
@@ -507,6 +631,101 @@ const AuthScreen = ({ users, onLogin, onRegister, initialMode = "login", onModeC
           <div style={styles.authMeta}>IdeaBoard • тіркелген профиль рөлді автоматты түрде сақтайды</div>
         </div>
       </div>
+function AuthGate({ users, onLogin, onRegister }) {
+  const [mode, setMode] = useState(() => (users.length ? "login" : "register"));
+  const [loginId, setLoginId] = useState(() => (users[0]?.id || ""));
+  const [name, setName] = useState("");
+  const [dept, setDept] = useState("");
+  const [role, setRole] = useState(ROLES[0]);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (users.length === 0) {
+      setLoginId("");
+      setMode("register");
+      return;
+    }
+    if (!users.find(u => u.id === loginId)) {
+      setLoginId(users[0].id);
+    }
+  }, [users, loginId]);
+
+  const canLogin = mode === "login" && users.length > 0 && Boolean(loginId);
+
+  return (
+    <div style={styles.authCard}>
+      <h2 style={{ margin: "0 0 6px" }}>IdeaBoard</h2>
+      <div style={{ fontSize: 13, opacity: 0.75 }}>Жүйеге кіру немесе жаңа рөл тіркеу</div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          style={{
+            ...styles.secondaryBtn,
+            background: mode === "login" ? "#2563eb" : "#374151",
+          }}
+          onClick={() => setMode("login")}
+        >Кіру</button>
+        <button
+          style={{
+            ...styles.secondaryBtn,
+            background: mode === "register" ? "#2563eb" : "#374151",
+          }}
+          onClick={() => setMode("register")}
+        >Тіркелу</button>
+      </div>
+
+      {mode === "login" ? (
+        <div style={{ display: "grid", gap: 12 }}>
+          {users.length === 0 ? (
+            <div style={{ fontSize: 13, opacity: 0.8 }}>Алдымен жаңа пайдаланушыны тіркеу қажет.</div>
+          ) : (
+            <>
+              <label style={{ display: "grid", gap: 6, fontSize: 13 }}>
+                <span style={{ opacity: 0.75 }}>Пайдаланушыны таңдаңыз</span>
+                <select style={styles.select} value={loginId} onChange={e => setLoginId(e.target.value)}>
+                  {users.map(u => (
+                    <option key={u.id} value={u.id}>{u.name} • {u.role}</option>
+                  ))}
+                </select>
+              </label>
+              <button style={{ ...styles.btn, opacity: canLogin ? 1 : 0.5 }} disabled={!canLogin} onClick={() => canLogin && onLogin(loginId)}>Кіру</button>
+            </>
+          )}
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: 12 }}>
+          <input
+            style={styles.input}
+            placeholder="Аты-жөні"
+            value={name}
+            onChange={e => setName(e.target.value)}
+          />
+          <input
+            style={styles.input}
+            placeholder="Бөлім (қалауыңыз бойынша)"
+            value={dept}
+            onChange={e => setDept(e.target.value)}
+          />
+          <label style={{ display: "grid", gap: 6, fontSize: 13 }}>
+            <span style={{ opacity: 0.75 }}>Рөлі</span>
+            <select style={styles.select} value={role} onChange={e => setRole(e.target.value)}>
+              {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </label>
+          {error && <div style={{ color: "#f87171", fontSize: 13 }}>{error}</div>}
+          <button
+            style={styles.btn}
+            onClick={() => {
+              const trimmed = name.trim();
+              if (!trimmed) {
+                setError("Аты-жөнін енгізіңіз");
+                return;
+              }
+              setError("");
+              onRegister({ name: trimmed, dept: dept.trim() || undefined, role });
+            }}
+          >Тіркелу</button>
+        </div>
+      )}
     </div>
   );
 };
@@ -1151,5 +1370,29 @@ const styles = {
     textAlign: "center",
     marginTop: "auto",
   },
+  page: { background:"#0b1220", color:"#e5e7eb", minHeight:"100vh", fontFamily:"ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto" },
+  container: { padding:"18px 18px 90px", maxWidth:1100, margin:"0 auto" },
+  topbar: { display:"flex", justifyContent:"space-between", alignItems:"center", padding:"14px 18px", borderBottom:"1px solid #1f2937", position:"sticky", top:0, background:"#0b1220", zIndex:10 },
+  h1: { margin:0, fontSize:20 },
+  btn: { background:"#2563eb", color:"white", border:"none", padding:"10px 14px", borderRadius:10, cursor:"pointer" },
+  secondaryBtn: { background:"#374151", color:"#e5e7eb", border:"none", padding:"8px 10px", borderRadius:8, cursor:"pointer" },
+  dangerBtn: { background:"#dc2626", color:"white", border:"none", padding:"8px 10px", borderRadius:8, cursor:"pointer" },
+  voteBtn: { color:"#e5e7eb", border:"none", padding:"8px 10px", borderRadius:8, cursor:"pointer" },
+  iconBtn: { background:"transparent", color:"#e5e7eb", border:"none", fontSize:18, cursor:"pointer" },
+  input: { background:"#0b1220", border:"1px solid #374151", color:"#e5e7eb", padding:"10px 12px", borderRadius:10 },
+  select: { background:"#111827", color:"#e5e7eb", border:"1px solid #374151", padding:"8px 10px", borderRadius:8 },
+  filters: { display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", margin:"12px 0" },
+  grid: { display:"grid", gap:12, gridTemplateColumns:"repeat(auto-fill, minmax(320px, 1fr))" },
+  card: { background:"#111827", border:"1px solid #1f2937", padding:16, borderRadius:14, boxShadow:"0 0 0 1px rgba(0,0,0,.1) inset" },
+  comment: { background:"#0b1220", border:"1px solid #1f2937", padding:"8px 10px", borderRadius:10 },
+  userBox: { background:"#111827", border:"1px solid #1f2937", padding:"6px 10px", borderRadius:10, minWidth:220 },
+  tabs: { display:"flex", gap:8, padding:"10px 18px", borderBottom:"1px solid #1f2937", position:"sticky", top:54, background:"#0b1220", zIndex:9 },
+  tab: { border:"1px solid #374151", padding:"8px 12px", borderRadius:999, cursor:"pointer" },
+  kpis: { display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(180px, 1fr))", gap:12, marginBottom:12 },
+  kpi: { background:"#111827", border:"1px solid #1f2937", padding:16, borderRadius:14 },
+  modalWrap: { position:"fixed", inset:0, background:"rgba(0,0,0,.5)", display:"grid", placeItems:"center", zIndex:20 },
+  modal: { width:"min(680px, 96vw)", background:"#0b1220", border:"1px solid #1f2937", borderRadius:16, padding:16 },
+  authCard: { background:"#111827", border:"1px solid #1f2937", borderRadius:16, padding:24, width:"min(420px, 94vw)", display:"grid", gap:16 },
+  footer: { position:"fixed", bottom:0, left:0, right:0, padding:"10px 18px", borderTop:"1px solid #1f2937", background:"rgba(11,18,32,.9)", backdropFilter:"saturate(180%) blur(6px)", textAlign:"center", fontSize:12 }
 };
 
