@@ -153,7 +153,7 @@ export default function IdeaBoardApp() {
         currentUser={currentUser}
         canSubmit={perms.submit}
         onLogout={() => {
-          setAuthIntent("register");
+          setAuthIntent(users.length > 0 ? "login" : "register");
           setCurrentUserId(null);
           setTab("ideas");
           setShowForm(false);
@@ -300,7 +300,8 @@ const Topbar = ({ currentUser, canSubmit, onLogout, onShowForm }) => (
 
 const AuthScreen = ({ users, onLogin, onRegister, initialMode = "login", onModeChange }) => {
   const [mode, setMode] = useState(() => (users.length === 0 ? "register" : initialMode));
-  const [loginId, setLoginId] = useState(() => users[0]?.id ?? "");
+  const [loginName, setLoginName] = useState("");
+  const [loginError, setLoginError] = useState("");
   const [name, setName] = useState("");
   const [dept, setDept] = useState("");
   const [role, setRole] = useState(ROLES[0]);
@@ -312,28 +313,48 @@ const AuthScreen = ({ users, onLogin, onRegister, initialMode = "login", onModeC
         setMode("register");
         onModeChange?.("register");
       }
-      setLoginId("");
+      setLoginName("");
+      setLoginError("");
       return;
     }
-    if (!users.some((user) => user.id === loginId)) {
-      setLoginId(users[0].id);
-    }
-  }, [users, loginId, mode, onModeChange]);
+  }, [users.length, mode, onModeChange]);
 
   useEffect(() => {
     if (users.length === 0) return;
     if (initialMode !== mode) {
       setMode(initialMode);
+      setLoginError("");
     }
   }, [initialMode, mode, users.length]);
 
   const selectMode = (nextMode) => {
     if (mode === nextMode) return;
     setMode(nextMode);
+    if (nextMode === "login") {
+      setError("");
+    } else {
+      setLoginError("");
+    }
     onModeChange?.(nextMode);
   };
 
-  const canLogin = mode === "login" && users.length > 0 && Boolean(loginId);
+  const canLogin = mode === "login" && users.length > 0 && Boolean(loginName.trim());
+
+  const handleLogin = () => {
+    const trimmed = loginName.trim();
+    if (!trimmed) {
+      setLoginError("Аты-жөнін енгізіңіз");
+      return;
+    }
+    const match = users.find((user) => user.name.toLowerCase() === trimmed.toLowerCase());
+    if (!match) {
+      setLoginError("Мұндай пайдаланушы табылмады");
+      return;
+    }
+    setLoginError("");
+    onLogin(match.id);
+    setLoginName("");
+  };
 
   const handleRegister = () => {
     const trimmed = name.trim();
@@ -372,7 +393,7 @@ const AuthScreen = ({ users, onLogin, onRegister, initialMode = "login", onModeC
             </h2>
             <div style={styles.authHint}>
               {mode === "login"
-                ? "Алдын ала сақталған профильді таңдаңыз немесе жаңа аккаунт жасаңыз."
+                ? "Алдын ала сақталған профильдің атын енгізіңіз немесе жаңа аккаунт жасаңыз."
                 : "Аты-жөніңізді, бөлімді (қажет болса) енгізіп, өз рөліңізді таңдаңыз."}
             </div>
           </div>
@@ -403,27 +424,53 @@ const AuthScreen = ({ users, onLogin, onRegister, initialMode = "login", onModeC
               <div style={styles.authEmpty}>Алдымен жаңа пайдаланушыны тіркеу қажет.</div>
             ) : (
               <div style={styles.authForm}>
-                <label style={styles.authLabel}>
-                  <span style={styles.authLabelText}>Пайдаланушыны таңдаңыз</span>
-                  <select
-                    style={styles.select}
-                    value={loginId}
-                    onChange={(event) => setLoginId(event.target.value)}
-                  >
-                    {users.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.name} • {user.role}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <input
+                  style={styles.input}
+                  placeholder="Аты-жөні (мысалы, Аружан С.)"
+                  value={loginName}
+                  onChange={(event) => {
+                    setLoginName(event.target.value);
+                    if (loginError) setLoginError("");
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && canLogin) {
+                      event.preventDefault();
+                      handleLogin();
+                    }
+                  }}
+                />
+                {loginError && <div style={styles.authError}>{loginError}</div>}
                 <button
                   style={{ ...styles.btn, opacity: canLogin ? 1 : 0.5 }}
                   disabled={!canLogin}
-                  onClick={() => canLogin && onLogin(loginId)}
+                  onClick={handleLogin}
                 >
                   Кіру
                 </button>
+                <div style={styles.authSavedListWrap}>
+                  <div style={styles.authLabelText}>Сақталған профильдер:</div>
+                  <ul style={styles.authSavedList}>
+                    {users.map((user) => (
+                      <li key={user.id} style={styles.authSavedItem}>
+                        <div>
+                          <div style={{ fontWeight: 600 }}>{user.name}</div>
+                          <div style={{ fontSize: 12, opacity: 0.7 }}>
+                            {user.role}{user.dept ? ` • ${user.dept}` : ""}
+                          </div>
+                        </div>
+                        <button
+                          style={styles.authSavedAction}
+                          onClick={() => {
+                            setLoginName(user.name);
+                            setLoginError("");
+                          }}
+                        >
+                          Таңдау
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </div>
             )
           ) : (
@@ -894,6 +941,39 @@ const styles = {
     fontSize: 12,
     opacity: 0.6,
     textAlign: "center",
+  },
+  authSavedListWrap: {
+    display: "grid",
+    gap: 10,
+    background: "rgba(30,41,59,0.4)",
+    borderRadius: 14,
+    padding: "14px 16px",
+  },
+  authSavedList: {
+    listStyle: "none",
+    margin: 0,
+    padding: 0,
+    display: "grid",
+    gap: 12,
+  },
+  authSavedItem: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    background: "rgba(17,24,39,0.65)",
+    borderRadius: 12,
+    padding: "10px 12px",
+    border: "1px solid rgba(148,163,184,0.12)",
+  },
+  authSavedAction: {
+    background: "rgba(37,99,235,0.85)",
+    color: "#f8fafc",
+    border: "none",
+    borderRadius: 999,
+    padding: "6px 12px",
+    cursor: "pointer",
+    fontWeight: 600,
   },
   container: {
     display: "grid",
