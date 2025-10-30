@@ -22,7 +22,7 @@ const DEFAULT_USERS = /** @type {User[]} */ ([
   { id: "u4", name: "Админ Нұржан", role: "admin", dept: "HQ" },
 ]);
 
-const ROLES = ["employee", "manager", "admin"]; // future: hr, reviewer, pm, analyst
+const ROLES = ["employee", "manager", "admin"];
 
 const PERMS = {
   employee: {
@@ -49,7 +49,7 @@ const PERMS = {
 };
 
 // ---------- Storage helpers ----------
-const LS_KEYS = { ideas: "ideaboard.ideas", currentUser: "ideaboard.currentUser" };
+const LS_KEYS = { ideas: "ideaboard.ideas", currentUser: "ideaboard.currentUser", users: "ideaboard.users" };
 
 /** @returns {Idea[]} */
 function loadIdeas() {
@@ -61,15 +61,52 @@ function loadIdeas() {
 /** @param {Idea[]} ideas */
 function saveIdeas(ideas) { localStorage.setItem(LS_KEYS.ideas, JSON.stringify(ideas)); }
 
-/** @returns {User} */
-function loadUser() {
-  const raw = localStorage.getItem(LS_KEYS.currentUser);
-  if (raw) try { return JSON.parse(raw); } catch {}
-  return DEFAULT_USERS[0];
+/** @returns {User[]} */
+function loadUsers() {
+  const raw = localStorage.getItem(LS_KEYS.users);
+  if (!raw) return DEFAULT_USERS;
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.every(u => u && typeof u.id === "string")) {
+      return parsed;
+    }
+  } catch {}
+  return DEFAULT_USERS;
 }
 
-/** @param {User} u */
-function saveUser(u) { localStorage.setItem(LS_KEYS.currentUser, JSON.stringify(u)); }
+/** @param {User[]} users */
+function saveUsers(users) { localStorage.setItem(LS_KEYS.users, JSON.stringify(users)); }
+
+/** @returns {string|null} */
+function loadCurrentUserId() {
+  const raw = localStorage.getItem(LS_KEYS.currentUser);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && "id" in parsed) {
+      return parsed.id;
+    }
+    if (typeof parsed === "string") {
+      return parsed;
+    }
+  } catch {}
+  try {
+    const fallback = JSON.parse(raw);
+    if (fallback && typeof fallback === "object" && "id" in fallback) {
+      return fallback.id;
+    }
+  } catch {}
+  return raw || null;
+}
+
+/** @param {string|null} id */
+function saveCurrentUserId(id) {
+  if (id) {
+    localStorage.setItem(LS_KEYS.currentUser, JSON.stringify(id));
+  } else {
+    localStorage.removeItem(LS_KEYS.currentUser);
+  }
+}
 
 // ---------- Utilities ----------
 const uid = (p = "id") => `${p}_${Math.random().toString(36).slice(2, 9)}`;
@@ -95,8 +132,10 @@ const CATEGORIES = [
 
 // ---------- Root Component ----------
 export default function IdeaBoardApp() {
-  const [ideas, setIdeas] = useState(/** @type {Idea[]} */(loadIdeas()));
-  const [currentUser, setCurrentUser] = useState(/** @type {User} */(loadUser()));
+  const [ideas, setIdeas] = useState(() => /** @type {Idea[]} */(loadIdeas()));
+  const [users, setUsers] = useState(() => /** @type {User[]} */(loadUsers()));
+  const [currentUserId, setCurrentUserId] = useState(() => loadCurrentUserId());
+  const currentUser = useMemo(() => users.find(u => u.id === currentUserId) || null, [users, currentUserId]);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
   const [status, setStatus] = useState("all");
@@ -105,7 +144,24 @@ export default function IdeaBoardApp() {
   const [activeTab, setActiveTab] = useState("ideas"); // ideas | projects | analytics | profile
 
   useEffect(() => saveIdeas(ideas), [ideas]);
-  useEffect(() => saveUser(currentUser), [currentUser]);
+  useEffect(() => saveUsers(users), [users]);
+  useEffect(() => saveCurrentUserId(currentUserId), [currentUserId]);
+
+  if (!currentUser) {
+    return (
+      <div style={{ ...styles.page, display: "grid", placeItems: "center", padding: 24 }}>
+        <AuthGate
+          users={users}
+          onLogin={(id) => setCurrentUserId(id)}
+          onRegister={({ name, dept, role }) => {
+            const user = /** @type {User} */({ id: uid("user"), name, role, ...(dept ? { dept } : {}) });
+            setUsers(prev => [...prev, user]);
+            setCurrentUserId(user.id);
+          }}
+        />
+      </div>
+    );
+  }
 
   const perms = PERMS[/** @type {keyof typeof PERMS} */(currentUser.role)] || PERMS.employee;
 
@@ -136,10 +192,9 @@ export default function IdeaBoardApp() {
     <div style={styles.page}>
       <Topbar
         currentUser={currentUser}
-        onSwitchUser={(u) => setCurrentUser(u)}
+        onLogout={() => setCurrentUserId(null)}
         onNewIdea={() => setShowForm(true)}
         canSubmit={perms.submit}
-        users={DEFAULT_USERS}
       />
 
       <Tabs value={activeTab} onChange={setActiveTab} />
@@ -238,7 +293,7 @@ function addComment(idea, user, text) {
 }
 
 // ---------- UI pieces ----------
-function Topbar({ currentUser, users, onSwitchUser, onNewIdea, canSubmit }) {
+function Topbar({ currentUser, onLogout, onNewIdea, canSubmit }) {
   return (
     <div style={styles.topbar}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -246,29 +301,112 @@ function Topbar({ currentUser, users, onSwitchUser, onNewIdea, canSubmit }) {
         <Badge text="Қызметкерлерге арналған"/>
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <RoleSwitcher users={users} currentUser={currentUser} onSwitchUser={onSwitchUser} />
+        <div style={styles.userBox}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{currentUser.name}</div>
+          <div style={{ fontSize: 12, opacity: 0.75 }}>{currentUser.role}{currentUser.dept ? ` • ${currentUser.dept}` : ""}</div>
+        </div>
+        <button style={styles.secondaryBtn} onClick={onLogout}>Шығу</button>
         <button style={{ ...styles.btn, opacity: canSubmit ? 1 : 0.5 }} onClick={() => canSubmit && onNewIdea()}>+ Ұсыныс енгізу</button>
       </div>
     </div>
   );
 }
 
-function RoleSwitcher({ users, currentUser, onSwitchUser }) {
+function AuthGate({ users, onLogin, onRegister }) {
+  const [mode, setMode] = useState(() => (users.length ? "login" : "register"));
+  const [loginId, setLoginId] = useState(() => (users[0]?.id || ""));
+  const [name, setName] = useState("");
+  const [dept, setDept] = useState("");
+  const [role, setRole] = useState(ROLES[0]);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (users.length === 0) {
+      setLoginId("");
+      setMode("register");
+      return;
+    }
+    if (!users.find(u => u.id === loginId)) {
+      setLoginId(users[0].id);
+    }
+  }, [users, loginId]);
+
+  const canLogin = mode === "login" && users.length > 0 && Boolean(loginId);
+
   return (
-    <div style={styles.roleBox}>
-      <div style={{ fontSize: 12, opacity: 0.7 }}>Қолданушы</div>
-      <select
-        value={currentUser.id}
-        onChange={(e) => {
-          const u = users.find(x => x.id === e.target.value) || users[0];
-          onSwitchUser(u);
-        }}
-        style={styles.select}
-      >
-        {users.map(u => (
-          <option key={u.id} value={u.id}>{u.name} • {u.role}</option>
-        ))}
-      </select>
+    <div style={styles.authCard}>
+      <h2 style={{ margin: "0 0 6px" }}>IdeaBoard</h2>
+      <div style={{ fontSize: 13, opacity: 0.75 }}>Жүйеге кіру немесе жаңа рөл тіркеу</div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          style={{
+            ...styles.secondaryBtn,
+            background: mode === "login" ? "#2563eb" : "#374151",
+          }}
+          onClick={() => setMode("login")}
+        >Кіру</button>
+        <button
+          style={{
+            ...styles.secondaryBtn,
+            background: mode === "register" ? "#2563eb" : "#374151",
+          }}
+          onClick={() => setMode("register")}
+        >Тіркелу</button>
+      </div>
+
+      {mode === "login" ? (
+        <div style={{ display: "grid", gap: 12 }}>
+          {users.length === 0 ? (
+            <div style={{ fontSize: 13, opacity: 0.8 }}>Алдымен жаңа пайдаланушыны тіркеу қажет.</div>
+          ) : (
+            <>
+              <label style={{ display: "grid", gap: 6, fontSize: 13 }}>
+                <span style={{ opacity: 0.75 }}>Пайдаланушыны таңдаңыз</span>
+                <select style={styles.select} value={loginId} onChange={e => setLoginId(e.target.value)}>
+                  {users.map(u => (
+                    <option key={u.id} value={u.id}>{u.name} • {u.role}</option>
+                  ))}
+                </select>
+              </label>
+              <button style={{ ...styles.btn, opacity: canLogin ? 1 : 0.5 }} disabled={!canLogin} onClick={() => canLogin && onLogin(loginId)}>Кіру</button>
+            </>
+          )}
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: 12 }}>
+          <input
+            style={styles.input}
+            placeholder="Аты-жөні"
+            value={name}
+            onChange={e => setName(e.target.value)}
+          />
+          <input
+            style={styles.input}
+            placeholder="Бөлім (қалауыңыз бойынша)"
+            value={dept}
+            onChange={e => setDept(e.target.value)}
+          />
+          <label style={{ display: "grid", gap: 6, fontSize: 13 }}>
+            <span style={{ opacity: 0.75 }}>Рөлі</span>
+            <select style={styles.select} value={role} onChange={e => setRole(e.target.value)}>
+              {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </label>
+          {error && <div style={{ color: "#f87171", fontSize: 13 }}>{error}</div>}
+          <button
+            style={styles.btn}
+            onClick={() => {
+              const trimmed = name.trim();
+              if (!trimmed) {
+                setError("Аты-жөнін енгізіңіз");
+                return;
+              }
+              setError("");
+              onRegister({ name: trimmed, dept: dept.trim() || undefined, role });
+            }}
+          >Тіркелу</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -550,12 +688,13 @@ const styles = {
   grid: { display:"grid", gap:12, gridTemplateColumns:"repeat(auto-fill, minmax(320px, 1fr))" },
   card: { background:"#111827", border:"1px solid #1f2937", padding:16, borderRadius:14, boxShadow:"0 0 0 1px rgba(0,0,0,.1) inset" },
   comment: { background:"#0b1220", border:"1px solid #1f2937", padding:"8px 10px", borderRadius:10 },
-  roleBox: { background:"#111827", border:"1px solid #1f2937", padding:"6px 8px", borderRadius:10, minWidth:240 },
+  userBox: { background:"#111827", border:"1px solid #1f2937", padding:"6px 10px", borderRadius:10, minWidth:220 },
   tabs: { display:"flex", gap:8, padding:"10px 18px", borderBottom:"1px solid #1f2937", position:"sticky", top:54, background:"#0b1220", zIndex:9 },
   tab: { border:"1px solid #374151", padding:"8px 12px", borderRadius:999, cursor:"pointer" },
   kpis: { display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(180px, 1fr))", gap:12, marginBottom:12 },
   kpi: { background:"#111827", border:"1px solid #1f2937", padding:16, borderRadius:14 },
   modalWrap: { position:"fixed", inset:0, background:"rgba(0,0,0,.5)", display:"grid", placeItems:"center", zIndex:20 },
   modal: { width:"min(680px, 96vw)", background:"#0b1220", border:"1px solid #1f2937", borderRadius:16, padding:16 },
+  authCard: { background:"#111827", border:"1px solid #1f2937", borderRadius:16, padding:24, width:"min(420px, 94vw)", display:"grid", gap:16 },
   footer: { position:"fixed", bottom:0, left:0, right:0, padding:"10px 18px", borderTop:"1px solid #1f2937", background:"rgba(11,18,32,.9)", backdropFilter:"saturate(180%) blur(6px)", textAlign:"center", fontSize:12 }
 };
