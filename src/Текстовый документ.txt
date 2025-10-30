@@ -1,0 +1,2 @@
+cd C:\Projects\ideaboard
+npm run dev

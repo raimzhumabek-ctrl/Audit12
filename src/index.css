@@ -1,0 +1,21 @@
+/* Толық ен, толық биіктік, артық отступтар жоқ */
+html, body, #root {
+  height: 100%;
+  width: 100%;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: #0b1220; /* IdeaBoard фоны ақты жояды */
+  color: #e5e7eb;
+}
+
+/* Vite шаблонындағы бұл шектеуді ЖОЙ: 
+   #root { max-width: 1280px; margin: 0 auto; padding: 2rem; } */
+#root {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
