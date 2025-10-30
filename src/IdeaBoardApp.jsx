@@ -85,6 +85,7 @@ export default function IdeaBoardApp() {
   const [ideas, setIdeas] = useState(() => loadIdeas());
   const [users, setUsers] = useState(() => loadUsers());
   const [currentUserId, setCurrentUserId] = useState(() => loadCurrentUserId());
+  const [authIntent, setAuthIntent] = useState("login");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
   const [status, setStatus] = useState("all");
@@ -100,12 +101,19 @@ export default function IdeaBoardApp() {
   useEffect(() => saveIdeas(ideas), [ideas]);
   useEffect(() => saveUsers(users), [users]);
   useEffect(() => saveCurrentUserId(currentUserId), [currentUserId]);
+  useEffect(() => {
+    if (users.length === 0) {
+      setAuthIntent("register");
+    }
+  }, [users]);
 
   if (!currentUser) {
     return (
       <div style={styles.centeredPage}>
         <AuthGate
           users={users}
+          initialMode={authIntent}
+          onModeChange={setAuthIntent}
           onLogin={(id) => setCurrentUserId(id)}
           onRegister={({ name, dept, role }) => {
             const newUser = { id: uid("user"), name, role, ...(dept ? { dept } : {}) };
@@ -146,7 +154,10 @@ export default function IdeaBoardApp() {
       <Topbar
         currentUser={currentUser}
         canSubmit={perms.submit}
-        onLogout={() => setCurrentUserId(null)}
+        onLogout={() => {
+          setAuthIntent("register");
+          setCurrentUserId(null);
+        }}
         onShowForm={() => setShowForm(true)}
       />
 
@@ -283,8 +294,8 @@ const Topbar = ({ currentUser, canSubmit, onLogout, onShowForm }) => (
   </header>
 );
 
-const AuthGate = ({ users, onLogin, onRegister }) => {
-  const [mode, setMode] = useState(users.length === 0 ? "register" : "login");
+const AuthGate = ({ users, onLogin, onRegister, initialMode = "login", onModeChange }) => {
+  const [mode, setMode] = useState(() => (users.length === 0 ? "register" : initialMode));
   const [loginId, setLoginId] = useState(users[0]?.id ?? "");
   const [name, setName] = useState("");
   const [dept, setDept] = useState("");
@@ -302,6 +313,20 @@ const AuthGate = ({ users, onLogin, onRegister }) => {
     }
   }, [users, loginId]);
 
+  useEffect(() => {
+    if (users.length === 0) {
+      return;
+    }
+    if (initialMode !== mode) {
+      setMode(initialMode);
+    }
+  }, [initialMode, mode, users.length]);
+
+  const selectMode = (nextMode) => {
+    setMode(nextMode);
+    onModeChange?.(nextMode);
+  };
+
   const canLogin = mode === "login" && users.length > 0 && Boolean(loginId);
 
   return (
@@ -311,11 +336,11 @@ const AuthGate = ({ users, onLogin, onRegister }) => {
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         <button
           style={{ ...styles.secondaryBtn, background: mode === "login" ? "#2563eb" : "#374151" }}
-          onClick={() => setMode("login")}
+          onClick={() => selectMode("login")}
         >Кіру</button>
         <button
           style={{ ...styles.secondaryBtn, background: mode === "register" ? "#2563eb" : "#374151" }}
-          onClick={() => setMode("register")}
+          onClick={() => selectMode("register")}
         >Тіркелу</button>
       </div>
 
