@@ -85,7 +85,7 @@ export default function IdeaBoardApp() {
   const [ideas, setIdeas] = useState(() => loadIdeas());
   const [users, setUsers] = useState(() => loadUsers());
   const [currentUserId, setCurrentUserId] = useState(() => loadCurrentUserId());
-  const [authIntent, setAuthIntent] = useState("login");
+  const [authIntent, setAuthIntent] = useState(() => (users.length === 0 ? "register" : "login"));
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
   const [status, setStatus] = useState("all");
@@ -109,19 +109,17 @@ export default function IdeaBoardApp() {
 
   if (!currentUser) {
     return (
-      <div style={styles.centeredPage}>
-        <AuthGate
-          users={users}
-          initialMode={authIntent}
-          onModeChange={setAuthIntent}
-          onLogin={(id) => setCurrentUserId(id)}
-          onRegister={({ name, dept, role }) => {
-            const newUser = { id: uid("user"), name, role, ...(dept ? { dept } : {}) };
-            setUsers((prev) => [...prev, newUser]);
-            setCurrentUserId(newUser.id);
-          }}
-        />
-      </div>
+      <AuthScreen
+        users={users}
+        initialMode={authIntent}
+        onModeChange={setAuthIntent}
+        onLogin={(id) => setCurrentUserId(id)}
+        onRegister={({ name, dept, role }) => {
+          const newUser = { id: uid("user"), name, role, ...(dept ? { dept } : {}) };
+          setUsers((prev) => [...prev, newUser]);
+          setCurrentUserId(newUser.id);
+        }}
+      />
     );
   }
 
@@ -157,6 +155,12 @@ export default function IdeaBoardApp() {
         onLogout={() => {
           setAuthIntent("register");
           setCurrentUserId(null);
+          setTab("ideas");
+          setShowForm(false);
+          setQuery("");
+          setCategory("all");
+          setStatus("all");
+          setSort("top");
         }}
         onShowForm={() => setShowForm(true)}
       />
@@ -294,9 +298,9 @@ const Topbar = ({ currentUser, canSubmit, onLogout, onShowForm }) => (
   </header>
 );
 
-const AuthGate = ({ users, onLogin, onRegister, initialMode = "login", onModeChange }) => {
+const AuthScreen = ({ users, onLogin, onRegister, initialMode = "login", onModeChange }) => {
   const [mode, setMode] = useState(() => (users.length === 0 ? "register" : initialMode));
-  const [loginId, setLoginId] = useState(users[0]?.id ?? "");
+  const [loginId, setLoginId] = useState(() => users[0]?.id ?? "");
   const [name, setName] = useState("");
   const [dept, setDept] = useState("");
   const [role, setRole] = useState(ROLES[0]);
@@ -304,104 +308,158 @@ const AuthGate = ({ users, onLogin, onRegister, initialMode = "login", onModeCha
 
   useEffect(() => {
     if (users.length === 0) {
-      setMode("register");
+      if (mode !== "register") {
+        setMode("register");
+        onModeChange?.("register");
+      }
       setLoginId("");
       return;
     }
-    if (!users.some((u) => u.id === loginId)) {
+    if (!users.some((user) => user.id === loginId)) {
       setLoginId(users[0].id);
     }
-  }, [users, loginId]);
+  }, [users, loginId, mode, onModeChange]);
 
   useEffect(() => {
-    if (users.length === 0) {
-      return;
-    }
+    if (users.length === 0) return;
     if (initialMode !== mode) {
       setMode(initialMode);
     }
   }, [initialMode, mode, users.length]);
 
   const selectMode = (nextMode) => {
+    if (mode === nextMode) return;
     setMode(nextMode);
     onModeChange?.(nextMode);
   };
 
   const canLogin = mode === "login" && users.length > 0 && Boolean(loginId);
 
-  return (
-    <div style={styles.authCard}>
-      <h2 style={{ margin: "0 0 4px" }}>IdeaBoard</h2>
-      <div style={{ opacity: 0.7, marginBottom: 12 }}>Жүйеге кіру немесе жаңа рөлмен тіркелу</div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        <button
-          style={{ ...styles.secondaryBtn, background: mode === "login" ? "#2563eb" : "#374151" }}
-          onClick={() => selectMode("login")}
-        >Кіру</button>
-        <button
-          style={{ ...styles.secondaryBtn, background: mode === "register" ? "#2563eb" : "#374151" }}
-          onClick={() => selectMode("register")}
-        >Тіркелу</button>
-      </div>
+  const handleRegister = () => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setError("Аты-жөнін енгізіңіз");
+      return;
+    }
+    setError("");
+    onRegister({ name: trimmed, dept: dept.trim() || undefined, role });
+    setName("");
+    setDept("");
+    setRole(ROLES[0]);
+  };
 
-      {mode === "login" ? (
-        users.length === 0 ? (
-          <div style={{ fontSize: 13, opacity: 0.8 }}>Алдымен жаңа пайдаланушыны тіркеу қажет.</div>
-        ) : (
-          <div style={{ display: "grid", gap: 12 }}>
-            <label style={{ display: "grid", gap: 6, fontSize: 13 }}>
-              <span style={{ opacity: 0.75 }}>Пайдаланушыны таңдаңыз</span>
-              <select style={styles.select} value={loginId} onChange={(event) => setLoginId(event.target.value)}>
-                {users.map((user) => (
-                  <option key={user.id} value={user.id}>{user.name} • {user.role}</option>
-                ))}
-              </select>
-            </label>
-            <button
-              style={{ ...styles.btn, opacity: canLogin ? 1 : 0.5 }}
-              disabled={!canLogin}
-              onClick={() => canLogin && onLogin(loginId)}
-            >Кіру</button>
-          </div>
-        )
-      ) : (
-        <div style={{ display: "grid", gap: 12 }}>
-          <input
-            style={styles.input}
-            placeholder="Аты-жөні"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-          />
-          <input
-            style={styles.input}
-            placeholder="Бөлім (қажет емес)"
-            value={dept}
-            onChange={(event) => setDept(event.target.value)}
-          />
-          <label style={{ display: "grid", gap: 6, fontSize: 13 }}>
-            <span style={{ opacity: 0.75 }}>Рөлі</span>
-            <select style={styles.select} value={role} onChange={(event) => setRole(event.target.value)}>
-              {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
-            </select>
-          </label>
-          {error && <div style={{ color: "#f87171", fontSize: 13 }}>{error}</div>}
-          <button
-            style={styles.btn}
-            onClick={() => {
-              const trimmed = name.trim();
-              if (!trimmed) {
-                setError("Аты-жөнін енгізіңіз");
-                return;
-              }
-              setError("");
-              onRegister({ name: trimmed, dept: dept.trim() || undefined, role });
-              setName("");
-              setDept("");
-              setRole(ROLES[0]);
-            }}
-          >Тіркелу</button>
+  return (
+    <div style={styles.authPage}>
+      <div style={styles.authLayout}>
+        <div style={styles.authHero}>
+          <Badge text="Командалық платформа" />
+          <h1 style={styles.authHeroTitle}>Жаңашыл идеяларды бірге жүзеге асырайық</h1>
+          <p style={styles.authHeroBody}>
+            Тіркеліп, өз рөліңізбен жүйеге кіріңіз. Әр пайдаланушының рұқсаттары автоматты
+            түрде сақталады және IdeaBoard-та барлық ұсыныстармен жұмыс істеуге мүмкіндік береді.
+          </p>
+          <ul style={styles.authHeroList}>
+            <li style={styles.authHeroItem}>💡 Жаңа идеяларды қосып, командаға ұсыныңыз</li>
+            <li style={styles.authHeroItem}>🗳️ Дауыс беріп, үздік бастамаларды таңдаңыз</li>
+            <li style={styles.authHeroItem}>📈 Жобаларды бақылап, нәтижесін көріңіз</li>
+          </ul>
         </div>
-      )}
+
+        <div style={styles.authPanel}>
+          <div>
+            <h2 style={styles.authSectionTitle}>
+              {mode === "login" ? "Жүйеге кіру" : "Жаңа тіркеу"}
+            </h2>
+            <div style={styles.authHint}>
+              {mode === "login"
+                ? "Алдын ала сақталған профильді таңдаңыз немесе жаңа аккаунт жасаңыз."
+                : "Аты-жөніңізді, бөлімді (қажет болса) енгізіп, өз рөліңізді таңдаңыз."}
+            </div>
+          </div>
+
+          <div style={styles.authToggle}>
+            <button
+              style={{
+                ...styles.authToggleBtn,
+                background: mode === "login" ? "#2563eb" : "rgba(30,41,59,0.85)",
+              }}
+              onClick={() => selectMode("login")}
+            >
+              Кіру
+            </button>
+            <button
+              style={{
+                ...styles.authToggleBtn,
+                background: mode === "register" ? "#2563eb" : "rgba(30,41,59,0.85)",
+              }}
+              onClick={() => selectMode("register")}
+            >
+              Тіркелу
+            </button>
+          </div>
+
+          {mode === "login" ? (
+            users.length === 0 ? (
+              <div style={styles.authEmpty}>Алдымен жаңа пайдаланушыны тіркеу қажет.</div>
+            ) : (
+              <div style={styles.authForm}>
+                <label style={styles.authLabel}>
+                  <span style={styles.authLabelText}>Пайдаланушыны таңдаңыз</span>
+                  <select
+                    style={styles.select}
+                    value={loginId}
+                    onChange={(event) => setLoginId(event.target.value)}
+                  >
+                    {users.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name} • {user.role}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  style={{ ...styles.btn, opacity: canLogin ? 1 : 0.5 }}
+                  disabled={!canLogin}
+                  onClick={() => canLogin && onLogin(loginId)}
+                >
+                  Кіру
+                </button>
+              </div>
+            )
+          ) : (
+            <div style={styles.authForm}>
+              <input
+                style={styles.input}
+                placeholder="Аты-жөні"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+              />
+              <input
+                style={styles.input}
+                placeholder="Бөлім (қажет емес)"
+                value={dept}
+                onChange={(event) => setDept(event.target.value)}
+              />
+              <label style={styles.authLabel}>
+                <span style={styles.authLabelText}>Рөлі</span>
+                <select
+                  style={styles.select}
+                  value={role}
+                  onChange={(event) => setRole(event.target.value)}
+                >
+                  {ROLES.map((r) => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+              </label>
+              {error && <div style={styles.authError}>{error}</div>}
+              <button style={styles.btn} onClick={handleRegister}>Тіркелу</button>
+            </div>
+          )}
+
+          <div style={styles.authMeta}>IdeaBoard • тіркелген профиль рөлді автоматты түрде сақтайды</div>
+        </div>
+      </div>
     </div>
   );
 };
@@ -723,13 +781,119 @@ const styles = {
     gap: 24,
     padding: 24,
   },
-  centeredPage: {
+  authPage: {
     minHeight: "100vh",
-    background: "#0f172a",
-    color: "#f9fafb",
+    background:
+      "radial-gradient(circle at 20% 20%, rgba(37,99,235,0.28), rgba(2,6,23,0.92) 55%, #020617 100%)",
+    color: "#f8fafc",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "48px 20px",
+  },
+  authLayout: {
+    width: "min(960px, 100%)",
     display: "grid",
-    placeItems: "center",
-    padding: 24,
+    gap: 32,
+    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+    alignItems: "stretch",
+  },
+  authHero: {
+    background: "rgba(15,23,42,0.75)",
+    borderRadius: 24,
+    padding: 32,
+    display: "grid",
+    gap: 16,
+    border: "1px solid rgba(148,163,184,0.18)",
+    boxShadow: "0 35px 60px rgba(2,6,23,0.45)",
+    backdropFilter: "blur(18px)",
+  },
+  authHeroTitle: {
+    margin: 0,
+    fontSize: 30,
+    lineHeight: 1.3,
+  },
+  authHeroBody: {
+    margin: 0,
+    fontSize: 15,
+    lineHeight: 1.6,
+    opacity: 0.85,
+  },
+  authHeroList: {
+    listStyle: "none",
+    margin: 0,
+    padding: 0,
+    display: "grid",
+    gap: 12,
+  },
+  authHeroItem: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    background: "rgba(17,24,39,0.7)",
+    borderRadius: 18,
+    padding: "12px 16px",
+    fontSize: 14,
+    border: "1px solid rgba(148,163,184,0.12)",
+  },
+  authPanel: {
+    background: "#111827",
+    borderRadius: 24,
+    padding: 32,
+    display: "grid",
+    gap: 20,
+    boxShadow: "0 30px 50px rgba(15,23,42,0.45)",
+    border: "1px solid rgba(30,41,59,0.6)",
+  },
+  authSectionTitle: {
+    margin: "0 0 6px",
+  },
+  authHint: {
+    fontSize: 13,
+    opacity: 0.75,
+    lineHeight: 1.5,
+  },
+  authToggle: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: 8,
+  },
+  authToggleBtn: {
+    border: "none",
+    borderRadius: 999,
+    padding: "10px 16px",
+    fontWeight: 600,
+    cursor: "pointer",
+    color: "#f8fafc",
+    background: "rgba(30,41,59,0.85)",
+  },
+  authForm: {
+    display: "grid",
+    gap: 14,
+  },
+  authLabel: {
+    display: "grid",
+    gap: 6,
+    fontSize: 13,
+  },
+  authLabelText: {
+    opacity: 0.75,
+  },
+  authError: {
+    color: "#f87171",
+    fontSize: 13,
+  },
+  authEmpty: {
+    fontSize: 13,
+    opacity: 0.85,
+    background: "rgba(30,41,59,0.6)",
+    borderRadius: 14,
+    padding: "14px 16px",
+  },
+  authMeta: {
+    fontSize: 12,
+    opacity: 0.6,
+    textAlign: "center",
   },
   container: {
     display: "grid",
@@ -816,15 +980,6 @@ const styles = {
     borderRadius: 10,
     padding: "10px 12px",
     color: "#f9fafb",
-  },
-  authCard: {
-    width: 360,
-    background: "#111827",
-    borderRadius: 16,
-    padding: 24,
-    display: "grid",
-    gap: 16,
-    boxShadow: "0 20px 50px rgba(15,23,42,0.4)",
   },
   card: {
     background: "#111827",
