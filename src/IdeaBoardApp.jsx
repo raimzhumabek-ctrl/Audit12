@@ -22,7 +22,8 @@ const DEFAULT_USERS = /** @type {User[]} */ ([
   { id: "u4", name: "Админ Нұржан", role: "admin", dept: "HQ" },
 ]);
 
-const ROLES = ["employee", "manager", "admin"]; // future: hr, reviewer, pm, analyst
+// Future roles to unlock later: hr, reviewer, pm, analyst
+const ROLES = ["employee", "manager", "admin"];
 
 const PERMS = {
   employee: {
